@@ -21,6 +21,20 @@ local function print_debug(obj)
   end
 end
 
+local function get_field(field_name)
+  local config_field = M.config[field_name]
+  local val
+
+  if type(config_field) == "function" then
+    val = config_field()
+  else
+    val = config_field
+  end
+
+  assert(val, "Failed to get field " .. val)
+  return val
+end
+
 local function load_comments_from_url(url)
   conf_check()
 
@@ -35,14 +49,14 @@ local function load_comments_from_url(url)
 
   if M.config.cookie then
     table.insert(headers, "--cookie")
-    table.insert(headers, M.config.cookie)
+    table.insert(headers, get_field("cookie"))
   else
     assert(M.config.username and M.config.password)
     if M.config.digest_authentication then
       table.insert(headers, "--digest")
     end
     table.insert(headers, "--user")
-    table.insert(headers, M.config.username .. ":" .. M.config.password)
+    table.insert(headers, get_field("username") .. ":" .. get_field("password"))
   end
 
   print_debug("Headers: " .. vim.inspect(headers))
