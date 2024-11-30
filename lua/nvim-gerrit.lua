@@ -4,6 +4,12 @@ local M = {
   config = {},
 }
 
+local function conf_check()
+  assert(M.config.cookie or (M.config.username and M.config.password),
+         "You must provide cookie or username and password")
+  assert(M.config.url, "You must provide url")
+end
+
 local function print_debug(obj)
   if not M.config.debug then
     return
@@ -16,8 +22,7 @@ local function print_debug(obj)
 end
 
 local function load_comments_from_url(url)
-  assert(M.config.url)
-  assert(M.config.cookie)
+  conf_check()
 
   if not url then
     vim.notify("You must provide an url", vim.log.levels.ERROR)
@@ -26,9 +31,25 @@ local function load_comments_from_url(url)
 
   print_debug("Loading comments from url " .. url)
 
+  local headers = {}
+
+  if M.config.cookie then
+    table.insert(headers, "--cookie")
+    table.insert(headers, M.config.cookie)
+  else
+    assert(M.config.username and M.config.password)
+    if M.config.digest_authentication then
+      table.insert(headers, "--digest")
+    end
+    table.insert(headers, "--user")
+    table.insert(headers, M.config.username .. ":" .. M.config.password)
+  end
+
+  print_debug("Headers: " .. vim.inspect(headers))
+
   curl.get({
     url = url,
-    raw = { "--cookie", M.config.cookie },
+    raw = headers,
     callback = function(res)
       vim.schedule(function()
         -- Clean quickfix list
@@ -62,8 +83,7 @@ local function load_comments_from_url(url)
 end
 
 M.load_comments_from_changeid = function(id)
-  assert(M.config.url)
-  assert(M.config.cookie)
+  conf_check()
 
   if not id then
     vim.notify("You must provide an id", vim.log.levels.ERROR)
@@ -75,19 +95,15 @@ M.load_comments_from_changeid = function(id)
 end
 
 M.setup = function(config)
-  if not config.cookie then
-    vim.notify("Field cookie is mandatory", vim.log.levels.ERROR)
-    return false
-  end
-
-  if not config.url then
-    vim.notify("Field url is mandatory", vim.log.levels.ERROR)
-    return false
-  end
-
   M.config.url = config.url
+  M.config.username = config.username
+  M.config.password = config.password
   M.config.cookie = config.cookie
   M.config.debug = config.debug or false
+
+  print_debug(vim.inspect(config))
+
+  conf_check()
 
   vim.api.nvim_create_user_command("GerritLoadComments", function(args)
     M.load_comments_from_changeid(args.args)
