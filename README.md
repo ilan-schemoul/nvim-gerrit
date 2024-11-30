@@ -46,6 +46,9 @@ You can get a cookie by connecting to your browser and copying your authenticati
 
 It will load the comments on your quickfix list.
 
+Be sure that you have ":cd ~/dev/my_project" (or ":tcd") to have the root of the repo reviewed on gerrit before
+-:GerritLoadComments (otherwise the paths in the quickfix list won't make sense).
+
 # Contributions
 
 There is much more we can do with the [gerrit API](https://gerrit-documentation.storage.googleapis.com/Documentation/2.15.3/rest-api.html). Contributions are welcome.
