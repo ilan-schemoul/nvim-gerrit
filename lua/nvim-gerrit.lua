@@ -1,4 +1,5 @@
 local curl = require "plenary.curl"
+local entry_display = require "telescope.pickers.entry_display"
 local pickers = require "telescope.pickers"
 local finders = require "telescope.finders"
 local conf = require("telescope.config").values
@@ -202,10 +203,26 @@ M.list_changes = function()
   api_request(endpoint, function(changes_arr)
     local changes = {}
 
-    for _, _changes in ipairs(changes_arr) do
+    for i, _changes in ipairs(changes_arr) do
       for _, _change in ipairs(_changes) do
+        _change.self_owner = i == 1
         table.insert(changes, _change)
       end
+    end
+
+    local displayer = entry_display.create {
+      items = {
+        { remaining = true },
+      },
+    }
+
+    local function make_display(change)
+      local highlight = change.value.self_owner and "TelescopeGerritOwner"
+                        or "TelescopeGerritReviewer"
+
+      return displayer({
+        { change.value.subject, highlight },
+      })
     end
 
     -- When the query comports an "&" then the API response contains multiple
@@ -217,7 +234,7 @@ M.list_changes = function()
         entry_maker = function(change)
           return {
             value = change,
-            display = change.subject,
+            display = make_display,
             ordinal = change.subject,
           }
         end,
@@ -237,6 +254,16 @@ M.list_changes = function()
   end)
 end
 
+local function set_default_highlights()
+  if vim.fn.hlexists("TelescopeGerritOwner") == 0 then
+    vim.cmd("highlight TelescopeGerritOwner guifg=#dc8a78")
+  end
+
+  if vim.fn.hlexists("TelescopeGerritReviewer") == 0 then
+    vim.cmd("highlight TelescopeGerritReviewer guifg=#179299")
+  end
+end
+
 M.setup = function(config)
   M.config.url = config.url
   M.config.username = config.username
@@ -245,8 +272,9 @@ M.setup = function(config)
   M.config.debug = config.debug or false
 
   print_debug(vim.inspect(config))
-
   conf_check()
+
+  set_default_highlights()
 
   vim.api.nvim_create_user_command("GerritLoadComments", function(args)
     M.load_comments(args.args)
