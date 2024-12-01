@@ -38,6 +38,11 @@ local function get_field(field_name)
 end
 
 local function load_into_quickfix(comments_thread)
+  -- Clean quickfix list
+  vim.cmd("cexpr []")
+  -- Errors are in the form file:line
+  vim.cmd("set errorformat=%f:%l\\ %m")
+
   for _, thread in pairs(comments_thread) do
     if #thread.comments > 0 and thread.unresolved then
       local first_msg = "[unknown message]"
@@ -123,16 +128,7 @@ local function get_comment_threads(files)
   return comment_threads
 end
 
-local function load_comments_from_url(url)
-  conf_check()
-
-  if not url then
-    vim.notify("You must provide an url", vim.log.levels.ERROR)
-    return false
-  end
-
-  print_debug("Loading comments from url " .. url)
-
+local function get_headers()
   local headers = {}
 
   if M.config.cookie then
@@ -147,44 +143,48 @@ local function load_comments_from_url(url)
     table.insert(headers, get_field("username") .. ":" .. get_field("password"))
   end
 
+  return headers
+end
+
+local function api_request(endpoint, cb)
+  conf_check()
+
+  local headers = get_headers()
   print_debug("Headers: " .. vim.inspect(headers))
 
   curl.get({
-    url = url,
+    url = M.config.url .. endpoint,
     raw = headers,
     callback = function(res)
       vim.schedule(function()
-        -- Clean quickfix list
-        vim.cmd("cexpr []")
 
         print_debug("result body: " .. res.body)
+
         -- Remove )]}'
         local json = res.body:sub(5)
+        local object = vim.json.decode(json)
 
-        -- Errors are in the form file:line
-        vim.cmd("set errorformat=%f:%l\\ %m")
-
-        local files = vim.json.decode(json)
-        local comment_threads = get_comment_threads(files)
-        load_into_quickfix(comment_threads)
-
-        -- open quickfix
-        vim.cmd("copen")
+        cb(object)
       end)
     end,
   })
 end
 
-M.load_comments_from_changeid = function(id)
+M.load_comments = function(id)
   conf_check()
 
-  if not id then
-    vim.notify("You must provide an id", vim.log.levels.ERROR)
-    return false
-  end
+  local endpoint = "/changes/" .. tostring(id) .. "/comments"
 
-  local url = M.config.url .. "/changes/" .. tostring(id) .. "/comments"
-  load_comments_from_url(url)
+  api_request(endpoint, function(response)
+    local comment_threads = get_comment_threads(response)
+    load_into_quickfix(comment_threads)
+    -- open quickfix
+    vim.cmd("copen")
+  end)
+end
+
+M.list_changes = function()
+  conf_check()
 end
 
 M.setup = function(config)
@@ -199,8 +199,7 @@ M.setup = function(config)
   conf_check()
 
   vim.api.nvim_create_user_command("GerritLoadComments", function(args)
-    M.load_comments_from_changeid(args.args)
-    vim.cmd("cwindow")
+    M.load_comments(args.args)
   end, { nargs = 1 })
 end
 
