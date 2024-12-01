@@ -1,8 +1,6 @@
 # Setup
 
-Add this package with your favorite package manager. You must also install `nvim-lua/plenary.nvim`.
-You must install Telescope for `list_changes` to work.
-
+Add this package with your favorite package manager. You must also install `nvim-lua/plenary.nvim` and `nvim-telescope/telescope.nvim`.
 
 ```lua
 require("nvim-setup").setup({
@@ -18,6 +16,36 @@ require("nvim-setup").setup({
     password = os.getenv("GERRIT_PASSWORD"),
 })`.
 ```
+
+If you use Lazy as a package manager here is an example:
+
+```lua
+{
+  "ilan-schemoul/nvim-gerrit",
+  dependencies = {
+    "nvim-lua/plenary.nvim",
+    "nvim-telescope/telescope.nvim",
+  },
+  opts = {
+    url = "https://git.corp",
+    cookie = function()
+      local handle = io.popen("cp ~/snap/firefox/common/.mozilla/firefox/*default-release/cookies.sqlite /tmp/cookies.sqlite "
+      .. "&& sqlite3 /tmp/cookies.sqlite 'SELECT value FROM moz_cookies WHERE name=\"GerritAccount\" ;'"
+      .. "&& rm /tmp/cookies.sqlite")
+      assert(handle, "Gerrit cookie: popen fail")
+      local result = handle:read("*a")
+      assert(handle, "Gerrit cookie: failed to read output")
+      handle:close()
+      assert(#result, "Gerrit cookie: no output")
+      -- Remove the \n
+      result = result:sub(1, -2)
+      return "GerritAccount=" .. result
+    end,
+    debug = false,
+  }
+}
+```
+
 ## URL
 
 The url is mandatory. It should end with "/a" if you use the HTTP credentials.
@@ -72,14 +100,18 @@ end
 
 # Usage
 
-```lua
-:GerritLoadComments <change_id>
-```
+Call `:lua require("nvim-gerrit").list_changes()` to open in Telescope the list of
+opened changes (open changes where you are the reviewer or the owner). When
+you click enter you will the list of `unresolved` comments in your quickfix
+list.
 
-It will load the comments on your quickfix list.
+Be sure that you have ":cd ~/dev/my_project" (or ":tcd") to have the root of
+the repo reviewed on gerrit before calling this plugin (otherwise the paths in
+the quickfix list won't make sense).
 
-Be sure that you have ":cd ~/dev/my_project" (or ":tcd") to have the root of the repo reviewed on gerrit before
--:GerritLoadComments (otherwise the paths in the quickfix list won't make sense).
+You add a keymap to see the list of your changes:
+
+`vim.keymap.set("n", ",gl", require("nvim-gerrit").list_changes)`
 
 # Contributions
 
