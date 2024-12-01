@@ -21,6 +21,8 @@ local function print_debug(obj)
   end
 end
 
+-- If the field name is a function call that function and return its value.
+-- Otherwise just return the field.
 local function get_field(field_name)
   local config_field = M.config[field_name]
   local val
@@ -33,6 +35,92 @@ local function get_field(field_name)
 
   assert(val, "Failed to get field " .. val)
   return val
+end
+
+local function load_into_quickfix(comments_thread)
+  for _, thread in pairs(comments_thread) do
+    if #thread.comments > 0 and thread.unresolved then
+      local first_msg = "[unknown message]"
+      if thread.comments[1] then
+        first_msg = thread.comments[1].message
+      end
+
+      print_debug("Thread starting with " .. first_msg .. " has " ..
+                  #thread.comments .. " messages. Unresolved " ..
+                  tostring(thread.unresolved))
+
+      for _, comment in ipairs(thread.comments) do
+        assert(thread.filename)
+        assert(comment.line)
+        assert(comment.message)
+
+        print_debug("Comment " .. vim.inspect(comment))
+
+        local error = thread.filename .. ":" .. comment.line .. " " .. comment.message
+
+        -- Escape multiline string for vim
+        error = error:gsub("\n", "\n\\ ")
+        -- Escape quote
+        error = error:gsub("'", " ")
+
+        -- Load errors
+        vim.cmd("caddexpr '" .. error .. "'")
+      end
+    end
+  end
+end
+
+local function parse_json_date(json_date)
+    local pattern = "(%d+)%-(%d+)%-(%d+) (%d+)%:(%d+)%:(%d+)"
+    local year, month, day, hour, minute, seconds = json_date:match(pattern)
+    local timestamp = os.time{year = year, month = month,
+                      day = day, hour = hour, min = minute, sec = seconds}
+
+    assert(timestamp)
+    return timestamp
+end
+
+-- Return an associative array where the key is the id of the first comment
+-- in the thread and the values are the list of comments in that thread.
+local function get_comment_threads(files)
+  local comment_threads = {}
+
+  -- When a comment is store in a thread whose key is not its own id, but is
+  -- the id of its parent or greatparent then we store the tuple comment_id/
+  -- thread_id here.
+  local id_to_thread_id = {}
+
+  for filename, comments in pairs(files) do
+    -- We need to sort by comments date to properly form comments_thread
+    table.sort(comments, function(a, b)
+      return parse_json_date(a.updated) < parse_json_date(b.updated)
+    end)
+
+    for _, comment in ipairs(comments) do
+      -- Thread id is the ancestor id (parent, greatparent etc.)
+      local thread_id = id_to_thread_id[comment.in_reply_to]
+                        or comment.in_reply_to
+
+      if comment_threads[thread_id] then
+        table.insert(comment_threads[thread_id].comments, comment)
+        comment_threads[thread_id].unresolved = comment.unresolved
+
+        id_to_thread_id[comment.id] = thread_id
+      else
+        comment_threads[comment.id] = {
+          comments = { comment },
+          filename = filename,
+          -- As comments are sorted by updated we can use the last unresolved
+          -- state to determine if the whole thread is resolved
+          unresolved = comment.unresolved,
+        }
+      end
+    end
+  end
+
+  print_debug("Comment threads " .. vim.fn.json_encode(comment_threads))
+
+  return comment_threads
 end
 
 local function load_comments_from_url(url)
@@ -77,20 +165,11 @@ local function load_comments_from_url(url)
         vim.cmd("set errorformat=%f:%l\\ %m")
 
         local files = vim.json.decode(json)
-        for filename, patch_sets in pairs(files) do
-          for _, comment in ipairs(patch_sets) do
-            if comment.line then
-              local error = filename .. ":" .. comment.line .. " " .. comment.message
-              -- Escape multiline string for vim
-              error = error:gsub("\n", "\n\\ ")
-              -- Escape quote
-              error = error:gsub("'", " ")
+        local comment_threads = get_comment_threads(files)
+        load_into_quickfix(comment_threads)
 
-              -- Load errors
-              vim.cmd("caddexpr '" .. error .. "'")
-            end
-          end
-        end
+        -- open quickfix
+        vim.cmd("copen")
       end)
     end,
   })
