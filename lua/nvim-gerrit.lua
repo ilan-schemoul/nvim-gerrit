@@ -1,4 +1,9 @@
 local curl = require "plenary.curl"
+local pickers = require "telescope.pickers"
+local finders = require "telescope.finders"
+local conf = require("telescope.config").values
+local actions = require "telescope.actions"
+local action_state = require "telescope.actions.state"
 
 local M = {
   config = {},
@@ -44,6 +49,8 @@ local function load_into_quickfix(comments_thread)
   vim.cmd("set errorformat=%f:%l\\ %m")
 
   for _, thread in pairs(comments_thread) do
+    assert(thread.filename)
+
     if #thread.comments > 0 and thread.unresolved then
       local first_msg = "[unknown message]"
       if thread.comments[1] then
@@ -55,21 +62,19 @@ local function load_into_quickfix(comments_thread)
                   tostring(thread.unresolved))
 
       for _, comment in ipairs(thread.comments) do
-        assert(thread.filename)
-        assert(comment.line)
-        assert(comment.message)
+        if comment.line and comment.message then
+          print_debug("Comment " .. vim.inspect(comment))
 
-        print_debug("Comment " .. vim.inspect(comment))
+          local error = thread.filename .. ":" .. comment.line .. " " .. comment.message
 
-        local error = thread.filename .. ":" .. comment.line .. " " .. comment.message
+          -- Escape multiline string for vim
+          error = error:gsub("\n", "\n\\ ")
+          -- Escape quote
+          error = error:gsub("'", "''")
 
-        -- Escape multiline string for vim
-        error = error:gsub("\n", "\n\\ ")
-        -- Escape quote
-        error = error:gsub("'", " ")
-
-        -- Load errors
-        vim.cmd("caddexpr '" .. error .. "'")
+          -- Load errors
+          vim.cmd("caddexpr '" .. error .. "'")
+        end
       end
     end
   end
@@ -175,16 +180,61 @@ M.load_comments = function(id)
 
   local endpoint = "/changes/" .. tostring(id) .. "/comments"
 
-  api_request(endpoint, function(response)
-    local comment_threads = get_comment_threads(response)
+  api_request(endpoint, function(comments)
+    local comment_threads = get_comment_threads(comments)
     load_into_quickfix(comment_threads)
     -- open quickfix
     vim.cmd("copen")
+    -- When a message takes multiple lines then show it on multiple line
+    -- (instead of one).
+    vim.cmd("setl nolist wrap linebreak")
   end)
 end
 
 M.list_changes = function()
   conf_check()
+
+  local owned_changes = "q=is:open+owner:self"
+  local reviewed_changes = "q=is:open+reviewer:self+-owner:self"
+  local query = owned_changes .. "&" .. reviewed_changes
+  local endpoint = "/changes/?" .. query
+
+  api_request(endpoint, function(changes_arr)
+    local changes = {}
+
+    for _, _changes in ipairs(changes_arr) do
+      for _, _change in ipairs(_changes) do
+        table.insert(changes, _change)
+      end
+    end
+
+    -- When the query comports an "&" then the API response contains multiple
+    -- arrays
+    pickers.new({}, {
+      prompt_title = "Changes",
+      finder = finders.new_table({
+        results = changes,
+        entry_maker = function(change)
+          return {
+            value = change,
+            display = change.subject,
+            ordinal = change.subject,
+          }
+        end,
+      }),
+      sorter = conf.generic_sorter(),
+      attach_mappings = function(prompt_bufnr)
+        actions.select_default:replace(function()
+          actions.close(prompt_bufnr)
+          local change = action_state.get_selected_entry().value
+          assert(change)
+
+          M.load_comments(change._number)
+        end)
+        return true
+      end,
+    }):find()
+  end)
 end
 
 M.setup = function(config)

@@ -1,6 +1,8 @@
 # Setup
 
-Add this package with your favorite package manager.
+Add this package with your favorite package manager. You must also install `nvim-lua/plenary.nvim`.
+You must install Telescope for `list_changes` to work.
+
 
 ```lua
 require("nvim-setup").setup({
