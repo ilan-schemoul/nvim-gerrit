@@ -56,7 +56,7 @@ The fields username and password can be functions. The functions are called when
 requests are made. This can be used for example to call a CLI of a password keeper to resolve
 the password. Password keepers are much safer than env variables;
 
-## Cookie authentication
+## Cookie authentication (only if you do not have HTTP credentials)
 
 If you do **not** use HTTP crendentials you can use cookies to authenticate yourself.
 
